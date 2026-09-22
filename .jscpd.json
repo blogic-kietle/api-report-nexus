@@ -1,0 +1,6 @@
+{
+  "reporters": ["ai"],
+  "format": ["go"],
+  "ignore": ["**/internal/gen/**"],
+  "threshold": 0
+}

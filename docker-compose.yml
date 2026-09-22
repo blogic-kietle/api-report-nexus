@@ -1,0 +1,40 @@
+services:
+  report-nexus:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    # image: report-nexus:${VERSION:-dev}
+    container_name: report-nexus
+    networks:
+      - report-nexus
+    depends_on:
+      - gotenberg
+    ports:
+      - "8000:8000"
+    env_file:
+      - ${ENV_FILE:-.env.development}
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      GOTENBERG_URL: http://gotenberg:3000
+    volumes:
+      - ./certs:/app/certs:ro # RabbitMQ client .p12 + CA, referenced by RABBITMQ_CERT_PATH / RABBITMQ_CA_PATH
+    restart: ${RESTART_POLICY:-unless-stopped}
+
+  gotenberg:
+    image: gotenberg/gotenberg:8-chromium
+    container_name: gotenberg
+    command:
+      - gotenberg
+      - --api-timeout=300s
+      - --chromium-deny-private-ips=true
+      - --chromium-auto-start=true
+      - --chromium-max-queue-size=50
+    networks:
+      - report-nexus
+    shm_size: "2g"
+    restart: ${RESTART_POLICY:-unless-stopped}
+
+networks:
+  report-nexus:
+    driver: bridge

@@ -1,0 +1,331 @@
+<html style="font-size: 16px; overflow: auto">
+
+<head>
+  <title>{{.Title}}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      padding: 0 auto;
+      color: #000;
+      background-color: #fff;
+      font-family: Arial, Helvetica, Ubuntu, sans-serif;
+    }
+
+    .content-only {
+      margin: 0;
+      padding: 0;
+    }
+
+    .section-block {
+      break-inside: avoid;
+    }
+
+    .section-title {
+      break-after: avoid;
+      break-inside: avoid;
+    }
+
+    .content-block {
+      break-inside: avoid;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 10mm;
+    }
+
+    @media print {
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      a {
+        text-decoration: none !important;
+      }
+    }
+  </style>
+  <style>{{.Tailwind}}</style>
+</head>
+
+<body class="bg-gray-100 min-h-screen p-4 flex justify-center text-[#374151]">
+  <div class="bg-white w-full max-w-5xl space-y-6">
+    <!-- Header -->
+    <header class="flex justify-between items-start">
+      <div class="space-y-4">
+        <img src="{{.Logo}}" alt="BLogic Systems" class="h-auto w-full object-contain" />
+        <div class="space-y-1">
+          <h1 class="text-[#2a4c6d] font-bold text-lg uppercase">
+            {{.Store.Name}}
+          </h1>
+          <div class="flex flex-col text-xs font-medium">
+            <span class="uppercase">{{.Store.Address}}</span>
+            <span class="uppercase">{{.Store.City}}, {{.Store.State}} {{.Store.Zip}}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <div class="bg-[#f8fafc] rounded-lg p-5 w-120 border border-[#e2e8f0]">
+          <h2 class="text-[#2a4c6d] font-bold text-right text-lg mb-4">
+            <span class="uppercase">Online Order - Delivery Fee Summary</span>
+            <hr class="border-gray-300 border">
+            </hr>
+          </h2>
+          <div class="space-y-1 text-xs text-gray-600">
+            <div class="flex justify-between">
+              <span class="font-medium text-gray-500">Statement Date:</span>
+              <span class="font-bold text-gray-800">{{.Now}} </span>
+            </div>
+{{if .Store.MID}}            <div class="flex justify-between">
+              <span class="font-medium text-gray-500">MID:</span>
+              <span class="font-bold text-gray-800">{{.Store.MID}}</span>
+            </div>
+{{end}}            <div class="flex justify-between">
+              <span class="font-medium text-gray-500">Reporting Period:</span>
+              <span class="font-bold text-gray-800"> {{.ReportPeriod}} </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end">
+          <span class="text-xs font-medium text-gray-400">Support: {{.SupportPhoneNNumber}}</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Break  -->
+    <hr class="border-[#2a4c6d] border-2" />
+
+    <!-- Summary -->
+    <div class="flex flex-col gap-4">
+      <div class="grid grid-cols-3 gap-4">
+        <div class="border border-gray-200 rounded-lg p-4 text-center">
+          <p class="text-xs font-bold text-gray-500 uppercase mb-2">
+            Delivery Ticket Count
+          </p>
+          <p class="text-xl font-bold text-[#2a4c6d]">
+{{if .Summary.TotalDeliveryTicketCount}}            {{number .Summary.TotalDeliveryTicketCount}}
+{{end}}{{if not .Summary.TotalDeliveryTicketCount}}            0
+{{end}}          </p>
+        </div>
+
+        <div class="border border-gray-200 rounded-lg p-4 text-center">
+          <p class="text-xs font-bold text-gray-500 uppercase mb-2">
+            Delivery Fees
+          </p>
+          <p class="text-xl font-bold text-[#2a4c6d]">
+{{if .Summary.TotalDeliveryFees}}            {{currency .Summary.TotalDeliveryFees}}
+{{end}}{{if not .Summary.TotalDeliveryFees}}            $0.00
+{{end}}          </p>
+        </div>
+
+        <div class="border border-gray-200 rounded-lg p-4 text-center">
+          <p class="text-xs font-bold text-gray-500 uppercase mb-2">
+            Payment Total
+          </p>
+          <p class="text-xl font-bold text-[#2a4c6d]">
+{{if .Summary.TotalPayment}}            {{currency .Summary.TotalPayment}}
+{{end}}{{if not .Summary.TotalPayment}}            $0.00
+{{end}}          </p>
+        </div>
+      </div>
+
+      <!-- Note -->
+      <span class="text-red-400 text-xs">* Tax include Services & Fees Tax</span>
+    </div>
+
+    <!-- Content Summary -->
+    <section class="mt-2">
+      <div class="bg-[#2a4c6d] text-white px-3 py-2 rounded-sm font-bold text-xs uppercase">
+        Daily Activity Summary ({{.DateRange}})
+      </div>
+
+      <div class="border-gray-200 border overflow-hidden mt-3">
+        <table class="w-full">
+          <thead class="bg-[#f1f5f9] text-gray-500 font-bold border-b border-gray-200">
+            <tr>
+              <th class="py-3 px-2 text-xs text-left font-bold border-r border-gray-200 w-48">Date</th>
+              <th class="py-3 px-2 text-xs text-left font-bold border-r border-gray-200">Ticket Count</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Subtotal</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Discount</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Services & Fees</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Delivery Fee</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Tax*</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Custom Fee</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Total</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Tips</th>
+              <th class="py-3 px-2 text-xs text-right font-bold">Payment Total</th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-gray-100">
+{{range .Data}}            <tr class="hover:bg-gray-50">
+              <td class="py-3 px-2 text-left font-bold {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+                {{.Date}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .TicketCount}}                {{number .TicketCount}}
+{{end}}                {{if not .TicketCount}}0{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .SubTotal}}                {{currency .SubTotal}}
+{{end}}                {{if not .SubTotal}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .Discount}}                {{currency .Discount}}
+{{end}}                {{if not .Discount}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .ServiceAndFees}}                {{currency .ServiceAndFees}}
+{{end}}                {{if not .ServiceAndFees}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .DeliveryFee}}                {{currency .DeliveryFee}}
+{{end}}                {{if not .DeliveryFee}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .Tax}}                {{currency .Tax}}
+{{end}}                {{if not .Tax}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .CustomFee}}                {{currency .CustomFee}}
+{{end}}                {{if not .CustomFee}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .TotalAmount}}                {{currency .TotalAmount}}
+{{end}}                {{if not .TotalAmount}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} border-r border-gray-200 text-xs">
+{{if .TotalGratuity}}                {{currency .TotalGratuity}}
+{{end}}                {{if not .TotalGratuity}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right {{if .IsSummary}}text-[#2a4c6d]{{end}} text-xs">
+{{if .TotalPayment}}                {{currency .TotalPayment}}
+{{end}}                {{if not .TotalPayment}}$0.00{{end}}
+              </td>
+            </tr>
+{{end}}
+{{if not .Data}}            <tr>
+              <td colspan="6" class="py-8 text-center text-gray-400 italic text-xs">
+                No transactions found for this period.
+              </td>
+            </tr>
+{{end}}          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Content Detail -->
+    <section class="mt-8 section-block">
+      <div class="bg-[#2a4c6d] text-white px-3 py-2 rounded-sm font-bold text-xs uppercase section-title">
+        Detailed Transactions
+      </div>
+
+      <div class="border-gray-200 border overflow-hidden mt-3">
+        <table class="w-full text-xs">
+          <thead class="bg-[#f1f5f9] text-gray-500 font-bold border-b border-gray-200">
+            <tr>
+              <th class="py-3 px-2 text-xs text-left font-bold border-r border-gray-200 w-48">Date</th>
+              <th class="py-3 px-2 text-xs text-left font-bold border-r border-gray-200">Ticket #</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Subtotal</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Discount</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Services & Fees</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Delivery Fee</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Tax*</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Custom Fee</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Total</th>
+              <th class="py-3 px-2 text-xs text-right font-bold border-r border-gray-200">Tips</th>
+              <th class="py-3 px-2 text-xs text-right font-bold">Payment Total</th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-gray-100">
+{{range .Details}}            <tr class="hover:bg-gray-50">
+              <td class="py-3 px-2 text-left border-r border-gray-200 text-xs">
+                {{.Date}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .TicketNumber}}                {{.TicketNumber}}
+{{end}}                {{if not .TicketNumber}}-{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .SubTotal}}                {{currency .SubTotal}}
+{{end}}                {{if not .SubTotal}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .Discount}}                {{currency .Discount}}
+{{end}}                {{if not .Discount}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .ServiceAndFees}}                {{currency .ServiceAndFees}}
+{{end}}                {{if not .ServiceAndFees}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .DeliveryFee}}                {{currency .DeliveryFee}}
+{{end}}                {{if not .DeliveryFee}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .Tax}}                {{currency .Tax}}
+{{end}}                {{if not .Tax}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .CustomFee}}                {{currency .CustomFee}}
+{{end}}                {{if not .CustomFee}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .TotalAmount}}                {{currency .TotalAmount}}
+{{end}}                {{if not .TotalAmount}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right border-r border-gray-200 text-xs">
+{{if .TotalGratuity}}                {{currency .TotalGratuity}}
+{{end}}                {{if not .TotalGratuity}}$0.00{{end}}
+              </td>
+
+              <td class="py-3 px-2 text-right text-xs">
+{{if .TotalPayment}}                {{currency .TotalPayment}}
+{{end}}                {{if not .TotalPayment}}$0.00{{end}}
+              </td>
+            </tr>
+{{end}}
+{{if not .Details}}            <tr>
+              <td colspan="6" class="py-8 text-center text-gray-400 italic text-xs">
+                No transactions found for this period.
+              </td>
+            </tr>
+{{end}}          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <hr class="border-gray-200 mt-2" />
+    <footer class="text-center text-xs text-gray-400">
+      {{if .Store.MID}}MID: {{.Store.MID}} | {{end}}Store ID: {{.Store.ID}} | Generated via Blogic Systems
+    </footer>
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,13 @@
+.git
+.agents
+.claude
+bin
+*.md
+.env*
+Dockerfile*
+docker-compose*
+lefthook.yml
+cog.toml
+skills-lock.json
+certs
+scripts

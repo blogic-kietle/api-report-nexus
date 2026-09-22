@@ -1,0 +1,793 @@
+openapi: 3.0.3
+info:
+  title: report-nexus
+  version: "1.0"
+  description: |
+    Report service of the BLogic POS platform: renders sales reports as Excel or PDF and mails them through
+    the License API. PDF pages are printed by a Gotenberg container.
+
+    Every JSON response is the envelope `{data, message, isError, statusCode}`. Validation failures answer 400
+    with `message: "Validation failed"` and `data` listing each failing field. JSON bodies are capped at 20 MB
+    (`MAX_JSON_BODY`); larger bodies get 413. Field names are matched case-insensitively.
+servers:
+  - url: /
+security: []
+tags:
+  - name: Export
+    description: Synchronous downloads. The file is the response body; `Content-Disposition` carries the name.
+  - name: Send email
+    description: |
+      Builds the report and hands it to the License API, which delivers the mail with the file attached as a
+      base64 data URI. These routes exist only when `LICENSE_API_URL` is set. The subject is
+      `<storeName> - <report> - From <from> to <to>`; the note greets the store by name.
+  - name: System
+    description: Liveness and the build banner.
+paths:
+  /:
+    get:
+      tags: [System]
+      summary: Banner
+      operationId: banner
+      responses:
+        "200":
+          description: Plain text with the build version.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Welcome to the API! Version: dev"
+  /healthz:
+    get:
+      tags: [System]
+      summary: Liveness
+      operationId: healthz
+      description: |
+        200 while the process runs. Gotenberg and the License API are not probed; a failing dependency shows
+        up as 500 on the first request that needs it. With `DEBUG=true` the Go profiler is also served under
+        `/debug/pprof/`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/export-excel/sales-by-day-part:
+    post:
+      tags: [Export]
+      summary: Sales by Day Part workbook
+      operationId: exportSalesByDayPart
+      description: |
+        Groups the shifts by weekday and day part, one table per weekday in Monday-first order, rows sorted by
+        time of day, and returns the .xlsx. Shifts outside `meta.fromDate`..`meta.toDate` are dropped.
+        Download name: `Sales-by-Day-Part-Report From <from> to <to>.xlsx`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/ExportMeta'
+                data:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Shift'
+      responses:
+        "200":
+          $ref: '#/components/responses/Xlsx'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          description: Error generating Excel file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+  /api/export-pdf:
+    post:
+      tags: [Export]
+      summary: Print HTML to PDF
+      operationId: exportPdf
+      description: |
+        Prints `htmlContent` with Chromium using screen styles and backgrounds. Content wider than A4 landscape
+        (841.89pt) is zoomed out to fit. Resources on private, loopback or link-local addresses are not fetched.
+        Download name: `fileName` reduced to letters, digits and spaces, plus `.pdf`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/PDFRequest'
+                - required: [htmlContent, fileName]
+      responses:
+        "200":
+          $ref: '#/components/responses/Pdf'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          description: Error generating PDF file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "503":
+          $ref: '#/components/responses/Busy'
+  /api/export-pdf/stream/init:
+    post:
+      tags: [Export]
+      summary: Open a chunked upload
+      operationId: streamInit
+      description: |
+        For payloads above the 20 MB body limit or an edge proxy's limit. Upload the JSON body of
+        `/api/export-pdf` (with `htmlContent`, or `datasets` instead) in pieces of at most 5 MB
+        (`MAX_CHUNK_SIZE`), then finalize. An upload idle for 30 minutes (`PDF_STREAM_SESSION_TTL`) is dropped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, fileName, totalChunks]
+              properties:
+                sessionId:
+                  type: string
+                  description: Client-chosen id, unique while the upload is open.
+                fileName:
+                  type: string
+                  description: Used when the uploaded payload carries no fileName.
+                totalChunks:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          $ref: '#/components/responses/StreamOK'
+        "400":
+          description: Missing required parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "409":
+          description: Session already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+  /api/export-pdf/stream/chunk:
+    post:
+      tags: [Export]
+      summary: Upload one chunk
+      operationId: streamChunk
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [sessionId, chunkIndex, totalChunks, chunk]
+              properties:
+                sessionId:
+                  type: string
+                chunkIndex:
+                  type: integer
+                  description: 0-based; a 1-based sequence is accepted too. Re-sending an index overwrites it.
+                totalChunks:
+                  type: integer
+                chunk:
+                  type: string
+                  format: binary
+                  description: This slice of the JSON payload, at most 5 MB.
+      responses:
+        "200":
+          $ref: '#/components/responses/StreamOK'
+        "400":
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "413":
+          description: Chunk too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+  /api/export-pdf/stream/finalize:
+    post:
+      tags: [Export]
+      summary: Render the uploaded payload
+      operationId: streamFinalize
+      description: |
+        Joins the chunks in index order and parses them as a `PDFRequest`. With `htmlContent` the document is
+        printed as by `/api/export-pdf`. Without it `datasets` is rendered with the built-in table template:
+        the store letterhead on the first page, then every table. Payloads of 1000 rows or more
+        (`PDF_CHUNK_SIZE`) are printed in 1000-row pieces, six at a time, and merged. The upload is deleted
+        after a successful render.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId:
+                  type: string
+      responses:
+        "200":
+          $ref: '#/components/responses/Pdf'
+        "400":
+          description: '"Session ID is required" or "Session is incomplete, not all chunks received"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "500":
+          description: '"Error generating PDF from stream", also when the payload is not valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        "503":
+          $ref: '#/components/responses/Busy'
+  /api/send-email/sales-summary:
+    post:
+      tags: [Send email]
+      summary: Sales Summary workbook
+      operationId: mailSalesSummary
+      description: |
+        Up to four sheets: Summary (every section that has rows), Hourly Breakdown, Weekday Breakdown and
+        Day Part Breakdown. `meta.posVersion` decides which sections apply; `data.labelConfigs` renames fees
+        and sale types. Receipt numbers in the void, cancel and comp details link to
+        `BLOGIC_VIEW_CLIENT_URL`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                data:
+                  $ref: '#/components/schemas/SalesSummaryInput'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+  /api/send-email/low-inventory-items:
+    post:
+      tags: [Send email]
+      summary: Low Inventory workbook
+      operationId: mailLowInventory
+      description: One sheet, every item plus a totals row. Unlike the other reports the subject and note carry no period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                data:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/LowInventoryItem'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+  /api/send-email/item-sales-by-employee:
+    post:
+      tags: [Send email]
+      summary: Item Sales by Employee workbook
+      operationId: mailItemSalesByEmployee
+      description: An overall summary, then one table per item ending in its own summary row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                data:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ItemSales'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+  /api/send-email/sales-by-modifier:
+    post:
+      tags: [Send email]
+      summary: Sales by Modifier workbook
+      operationId: mailSalesByModifier
+      description: One table per category, each ending in its summary row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                data:
+                  $ref: '#/components/schemas/ModifierData'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+  /api/send-email/sales-by-day-part:
+    post:
+      tags: [Send email]
+      summary: Sales by Day Part workbook
+      operationId: mailSalesByDayPart
+      description: |
+        Same tables as the Excel export, attached as .xlsx; the mail body is a full rendering of the figures.
+        `meta.configurations` is an array of Config here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                data:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Shift'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+  /api/send-email/sales-by-category:
+    post:
+      tags: [Send email]
+      summary: Sales By Category workbook
+      operationId: mailSalesByCategory
+      description: |
+        Category Summary sheet, plus Item Details and Item Details with Modifier when
+        `meta.configurations` (a JSON string here) switches them on. The subject spells the period with an
+        abbreviated month, e.g. `from Sep/01/2026 12:00 AM to Sep/07/2026 11:59 PM`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                data:
+                  $ref: '#/components/schemas/CategoryData'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+  /api/send-email/delivery-fee-report:
+    post:
+      tags: [Send email]
+      summary: Online Orders Delivery Fee Statement (PDF)
+      operationId: mailDeliveryFee
+      description: |
+        Prints the statement to an A4 landscape PDF (letterhead from the `meta.store*` fields, three headline
+        cards, a summary row followed by one row per day) and mails it. When `RABBITMQ_HOST` is set and
+        `meta.storeID` is not empty, `stores.delivery-report.update` is published with
+        `{storeToken, lastTimeTrigger}` after the mail went out; a failed publish is logged and does not
+        change the response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meta, emails, data]
+              properties:
+                meta:
+                  $ref: '#/components/schemas/MailMeta'
+                emails:
+                  $ref: '#/components/schemas/Emails'
+                summary:
+                  $ref: '#/components/schemas/DeliveryFeeSummary'
+                data:
+                  type: array
+                  description: One row per day, each with its tickets in `details`. Days are sorted by date.
+                  items:
+                    $ref: '#/components/schemas/DeliveryFeeRow'
+      responses:
+        "200":
+          $ref: '#/components/responses/Sent'
+        "400":
+          $ref: '#/components/responses/Validation'
+        "413":
+          $ref: '#/components/responses/TooLarge'
+        "500":
+          $ref: '#/components/responses/MailFailed'
+        "503":
+          $ref: '#/components/responses/Busy'
+components:
+  responses:
+    Xlsx:
+      description: The workbook.
+      headers:
+        Content-Disposition:
+          description: 'attachment; filename=<name>.xlsx (unquoted, may contain spaces)'
+          schema:
+            type: string
+      content:
+        application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+          schema:
+            type: string
+            format: binary
+    Pdf:
+      description: The PDF.
+      headers:
+        Content-Disposition:
+          description: 'attachment; filename=<name>.pdf (unquoted, may contain spaces)'
+          schema:
+            type: string
+      content:
+        application/pdf:
+          schema:
+            type: string
+            format: binary
+    Sent:
+      description: Mail handed to the License API.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Envelope'
+          example:
+            data: true
+            message: Email sent
+            isError: false
+            statusCode: 200
+    MailFailed:
+      description: Error sending email. The workbook could not be built or the License API refused the mail.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Envelope'
+    StreamOK:
+      description: Acknowledged.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              message:
+                type: string
+                example: Chunk 0 uploaded successfully
+    Validation:
+      description: Validation failed. `data` lists each failing field.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    TooLarge:
+      description: Request body too large (20 MB).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Envelope'
+    Busy:
+      description: Server busy, please retry. The PDF renderer's queue is full, it timed out, or Chromium crashed.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+            example: "5"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Envelope'
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        data:
+          description: Payload; null on errors.
+        message:
+          type: string
+        isError:
+          type: boolean
+        statusCode:
+          type: integer
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  msg:
+                    type: string
+                    example: Meta From Date is required
+                  path:
+                    type: string
+                    example: meta.fromDate
+      example:
+        data:
+          - msg: Meta is required
+            path: meta
+        message: Validation failed
+        isError: true
+        statusCode: 400
+    Emails:
+      type: array
+      description: Recipients. Blank entries are dropped before validation; the rest must be email addresses and at least one must remain.
+      items:
+        type: string
+        format: email
+    MailMeta:
+      type: object
+      required: [fromDate, toDate]
+      properties:
+        storeID:
+          type: string
+          description: "Store token. Printed next to the store name and, for the delivery-fee statement, sent as storeToken on RabbitMQ."
+        storeName:
+          type: string
+          description: "Used in the subject and the greeting; \"Customer\" when empty."
+        posVersion:
+          type: string
+          description: "POS release as MM.dd.yyyy. Switches sales-summary sections on and off: 02.29.2024 average-sales layout, 04.03.2024 labor summary, 05.14.2024 configurable day parts, 08.23.2024 coin discount. Empty counts as the oldest release."
+          example: "08.23.2024"
+        fromDate:
+          type: string
+          description: "ISO-8601 with offset. Dates in the subject, note and workbook are formatted in this zone."
+          example: "2026-09-01T00:00:00-07:00"
+        toDate:
+          type: string
+          description: "ISO-8601 with offset. Dates in the subject, note and workbook are formatted in this zone."
+          example: "2026-09-01T00:00:00-07:00"
+        configurations:
+          description: "Per-report POS settings. sales-by-day-part expects an array of Config (SaleTypesConfig.DineInLabel / ToGoLabel rename the two sales columns). sales-by-category expects a JSON string such as {\"SystemConfigValue.SalesByCategoryReport.IncludeItemDetails\":\"1\",\"...IncludeItemDetailsWithModifier\":\"0\"}; anything but \"0\" turns the sheet on and an unparsable string turns both on. Other reports ignore it."
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/Config'
+            - type: string
+        storeMID:
+          type: string
+          description: "Delivery-fee statement letterhead only."
+        storeState:
+          type: string
+          description: "Delivery-fee statement letterhead only."
+        storeCity:
+          type: string
+          description: "Delivery-fee statement letterhead only."
+        storeAddress:
+          type: string
+          description: "Delivery-fee statement letterhead only."
+        storeZip:
+          type: string
+          description: "Delivery-fee statement letterhead only."
+    ExportMeta:
+      type: object
+      properties:
+        storeID:
+          type: string
+        storeName:
+          type: string
+        fromDate:
+          type: string
+          description: "ISO-8601 with offset. Shifts outside the range are dropped; a missing or unparsable bound keeps every shift on that side."
+        toDate:
+          type: string
+          description: "ISO-8601 with offset. Shifts outside the range are dropped; a missing or unparsable bound keeps every shift on that side."
+    PDFRequest:
+      type: object
+      properties:
+        htmlContent:
+          type: string
+          description: "A full HTML document, or the same document gzip-compressed and base64-encoded."
+        fileName:
+          type: string
+          description: "Download name. A trailing .pdf is dropped and only letters, digits and spaces are kept."
+        format:
+          type: string
+          enum: [letter, legal, tabloid, ledger, a0, a1, a2, a3, a4, a5, a6]
+          description: "Paper name, case-insensitive. Wins over width/height. Default Letter (8.5 x 11 in)."
+        width:
+          oneOf:
+            - type: number
+            - type: string
+          description: "Pixels when a number (96 per inch); a CSS length ending in px, in, cm or mm when a string. Both must be given to take effect; ignored when format is set."
+        height:
+          oneOf:
+            - type: number
+            - type: string
+          description: "Pixels when a number (96 per inch); a CSS length ending in px, in, cm or mm when a string. Both must be given to take effect; ignored when format is set."
+        landscape:
+          type: boolean
+          description: "Default false."
+        margin:
+          $ref: '#/components/schemas/Margin'
+        datasets:
+          $ref: '#/components/schemas/Datasets'
+    Margin:
+      type: object
+      properties:
+        top:
+          oneOf:
+            - type: number
+            - type: string
+          description: "Same units as width. Empty or missing means 0."
+        right:
+          oneOf:
+            - type: number
+            - type: string
+          description: "Same units as width. Empty or missing means 0."
+        bottom:
+          oneOf:
+            - type: number
+            - type: string
+          description: "Same units as width. Empty or missing means 0."
+        left:
+          oneOf:
+            - type: number
+            - type: string
+          description: "Same units as width. Empty or missing means 0."
+    Datasets:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/StoreMeta'
+        tables:
+          description: "Tables keyed by name, or a plain list. Rendered in this order."
+          oneOf:
+            - type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Table'
+            - type: array
+              items:
+                $ref: '#/components/schemas/Table'
+    StoreMeta:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        dates:
+          type: array
+          items:
+            type: string
+          description: "Two ISO-8601 strings, the period start and end, printed under the title."
+        date:
+          type: string
+          description: "Filled from dates before rendering; ignored on input."
+    Table:
+      type: object
+      properties:
+        title:
+          type: string
+          description: "Printed in upper case above the table."
+        labels:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+        datasets:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/Cell'
+          description: "Rows; each row lists its cells in label order."
+    Label:
+      type: object
+      properties:
+        prop:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          description: "string, number, currency, int, date or percent; drives the column width and alignment classes."
+        bold:
+          type: boolean
+    Cell:
+      type: object
+      properties:
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+          description: "May be null. Numbers are printed as JavaScript would (1000000, not 1e+06)."
+        isTextRight:
+          type: boolean
+        isBold:
+          type: boolean
+        link:
+          type: string
+          description: "When set the cell is rendered as a link to this URL."

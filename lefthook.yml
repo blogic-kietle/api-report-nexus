@@ -1,0 +1,21 @@
+commit-msg:
+  commands:
+    conventional-commit:
+      run: sh scripts/validate-commit-msg.sh "{1}"
+
+pre-commit:
+  piped: true
+  jobs:
+    - name: format
+      glob: "*.go"
+      run: golangci-lint fmt --diff {staged_files}
+
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      run: golangci-lint run ./...
+    test:
+      run: go test ./...
+    dup:
+      run: npx -y jscpd@5 --no-tips .
