@@ -46,8 +46,13 @@ func (h ExportPDF) Export(c *gin.Context) {
 
 // A busy Gotenberg gets a retryable 503; anything else is a 500.
 func pdfFail(c *gin.Context, err error, msg string) {
-	slog.Error("pdf failed", "err", err, "path", c.Request.URL.Path)
-	if errors.Is(err, gotenberg.ErrBusy) {
+	busy := errors.Is(err, gotenberg.ErrBusy)
+	level := slog.LevelError
+	if busy {
+		level = slog.LevelWarn
+	}
+	slog.Log(c.Request.Context(), level, "pdf failed", "err", err, "path", c.Request.URL.Path, "request_id", c.GetString("request_id"))
+	if busy {
 		c.Header("Retry-After", "5")
 		response.Fail(c, http.StatusServiceUnavailable, "Server busy, please retry")
 		return

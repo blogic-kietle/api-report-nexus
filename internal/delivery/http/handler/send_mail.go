@@ -60,7 +60,7 @@ func (h SendMail) DeliveryFee(c *gin.Context) {
 		}, h.Now())
 	if err == nil && h.Notify != nil && m.StoreID != "" {
 		if nerr := h.Notify.DeliveryReportUpdated(ctx, m.StoreID); nerr != nil {
-			h.Log.Error("delivery report update not published", "err", nerr, "store", m.StoreID)
+			h.Log.Error("delivery report update not published", "err", nerr, "store", m.StoreID, "request_id", c.GetString("request_id"))
 		}
 	}
 	h.finish(c, err)
@@ -197,7 +197,7 @@ func (h SendMail) SalesByCategory(c *gin.Context) {
 
 func (h SendMail) finish(c *gin.Context, err error) {
 	if err != nil {
-		h.Log.Error("send email failed", "err", err, "path", c.Request.URL.Path)
+		h.Log.Error("send email failed", "err", err, "path", c.Request.URL.Path, "request_id", c.GetString("request_id"))
 		response.Fail(c, http.StatusInternalServerError, "Error sending email")
 		return
 	}

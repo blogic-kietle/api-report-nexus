@@ -7,7 +7,7 @@ before:
 builds:
   - id: api-report-nexus
     main: ./cmd/api
-    binary: report-nexus
+    binary: api-report-nexus
     env:
       - CGO_ENABLED=0
     goos:

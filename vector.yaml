@@ -1,0 +1,29 @@
+sources:
+  docker:
+    type: docker_logs
+    include_containers: [api-report-nexus]
+
+transforms:
+  json:
+    type: remap
+    inputs: [docker]
+    source: |
+      parsed, err = parse_json(string!(.message))
+      if err == null {
+        . = merge(., object!(parsed))
+        del(.message)
+      }
+
+sinks:
+  victorialogs:
+    type: elasticsearch
+    inputs: [json]
+    endpoints: [http://victorialogs:9428/insert/elasticsearch/]
+    mode: bulk
+    api_version: v8
+    healthcheck:
+      enabled: false
+    query:
+      _msg_field: msg
+      _time_field: timestamp
+      _stream_fields: container_name

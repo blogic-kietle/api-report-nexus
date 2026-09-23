@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: report-nexus
+  title: api-report-nexus
   version: "1.0"
   description: |
     Report service of the BLogic POS platform: renders sales reports as Excel or PDF and mails them through
@@ -21,21 +21,8 @@ tags:
       base64 data URI. These routes exist only when `LICENSE_API_URL` is set. The subject is
       `<storeName> - <report> - From <from> to <to>`; the note greets the store by name.
   - name: System
-    description: Liveness and the build banner.
+    description: Liveness.
 paths:
-  /:
-    get:
-      tags: [System]
-      summary: Banner
-      operationId: banner
-      responses:
-        "200":
-          description: Plain text with the build version.
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: "Welcome to the API! Version: dev"
   /healthz:
     get:
       tags: [System]
@@ -56,6 +43,13 @@ paths:
                   status:
                     type: string
                     example: ok
+                  service:
+                    type: string
+                    example: api-report-nexus
+                  version:
+                    type: string
+                    description: Build version from `git describe`, `dev` for local builds.
+                    example: v1.4.0
   /api/export-excel/sales-by-day-part:
     post:
       tags: [Export]

@@ -47,11 +47,8 @@ func New(d Deps) *gin.Engine {
 		response.Fail(c, http.StatusInternalServerError, "Internal server error")
 	}), cors)
 
-	r.GET("/", func(c *gin.Context) {
-		c.String(http.StatusOK, "Welcome to the API! Version: "+d.Version)
-	})
 	r.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": serviceName, "version": d.Version})
 	})
 	r.GET("/api/openapi.yaml", func(c *gin.Context) { c.Data(http.StatusOK, "application/yaml", assets.OpenAPI) })
 	r.GET("/api/docs", func(c *gin.Context) { c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(docsHTML)) })
@@ -88,6 +85,8 @@ func New(d Deps) *gin.Engine {
 }
 
 // Scalar is fetched from the CDN when the page is viewed.
+const serviceName = "api-report-nexus"
+
 const docsHTML = `<!doctype html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>report-nexus API</title></head>

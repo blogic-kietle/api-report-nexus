@@ -22,6 +22,13 @@ const fit = `<script>(()=>{const w=document.body.scrollWidth;if(w>841.89)documen
 
 type Client struct{ base string }
 
+type traceKey struct{}
+
+// WithTrace makes Gotenberg log the same id as our request, as Gotenberg-Trace.
+func WithTrace(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, traceKey{}, id)
+}
+
 func New(base string) *Client { return &Client{strings.TrimSuffix(base, "/")} }
 
 func (c *Client) Render(ctx context.Context, html string, p pdf.Print) ([]byte, error) {
@@ -66,6 +73,9 @@ func (c *Client) post(ctx context.Context, route string, fields map[string]strin
 		return nil, err
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	if id, ok := ctx.Value(traceKey{}).(string); ok {
+		req.Header.Set("Gotenberg-Trace", id)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

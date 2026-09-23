@@ -1,11 +1,19 @@
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
 services:
-  report-nexus:
+  api-report-nexus:
+    <<: *logging
+    # image: ghcr.io/blogicsystems/api-report-nexus:${VERSION:-dev}
     build:
       context: .
       args:
         VERSION: ${VERSION:-dev}
-    # image: report-nexus:${VERSION:-dev}
-    container_name: report-nexus
+    container_name: api-report-nexus
     networks:
       - report-nexus
     depends_on:
@@ -22,6 +30,7 @@ services:
     restart: ${RESTART_POLICY:-unless-stopped}
 
   gotenberg:
+    <<: *logging
     image: gotenberg/gotenberg:8-chromium
     container_name: gotenberg
     command:
@@ -34,6 +43,35 @@ services:
       - report-nexus
     shm_size: "2g"
     restart: ${RESTART_POLICY:-unless-stopped}
+
+  victorialogs:
+    <<: *logging
+    image: victoriametrics/victoria-logs:v1.52.0
+    container_name: victorialogs
+    command: ["-storageDataPath=/victoria-logs-data", "-retentionPeriod=30d"]
+    volumes:
+      - victoria-logs-data:/victoria-logs-data
+    ports:
+      - "9428:9428"
+    networks:
+      - report-nexus
+    restart: ${RESTART_POLICY:-unless-stopped}
+
+  vector:
+    <<: *logging
+    image: timberio/vector:0.58.0-alpine
+    container_name: vector
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./vector.yaml:/etc/vector/vector.yaml:ro
+    depends_on:
+      - victorialogs
+    networks:
+      - report-nexus
+    restart: ${RESTART_POLICY:-unless-stopped}
+
+volumes:
+  victoria-logs-data:
 
 networks:
   report-nexus:

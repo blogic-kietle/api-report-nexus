@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"crypto/rand"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"api-report-nexus/internal/infrastructure/gotenberg"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +21,7 @@ func requestID(c *gin.Context) {
 	}
 	c.Set(requestIDKey, id)
 	c.Header("X-Request-ID", id)
+	c.Request = c.Request.WithContext(gotenberg.WithTrace(c.Request.Context(), id))
 	c.Next()
 }
 
@@ -29,11 +33,12 @@ func requestLog(log *slog.Logger) gin.HandlerFunc {
 		}
 		start := time.Now()
 		c.Next()
-		log.Info("http",
+		ms := time.Since(start).Milliseconds()
+		log.Info(fmt.Sprintf("%s %s %d %dms", c.Request.Method, c.Request.URL.Path, c.Writer.Status(), ms),
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
-			"duration_ms", time.Since(start).Milliseconds(),
+			"duration_ms", ms,
 			"req_bytes", c.Request.ContentLength,
 			"bytes", c.Writer.Size(),
 			"ip", c.ClientIP(),

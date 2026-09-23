@@ -7,7 +7,7 @@ run:
 	@set -a; [ -f .env.development ] && . ./.env.development; set +a; go run -ldflags '$(LDFLAGS)' ./cmd/api
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/report-nexus ./cmd/api
+	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/api-report-nexus ./cmd/api
 
 test:
 	go test -race -count=1 ./...
@@ -25,7 +25,7 @@ tidy:
 	go mod tidy
 
 docker:
-	docker build --build-arg VERSION=$(VERSION) -t report-nexus:$(VERSION) -t report-nexus:latest .
+	docker build --build-arg VERSION=$(VERSION) -t api-report-nexus:$(VERSION) -t api-report-nexus:latest .
 
 docker-run:
 	VERSION=$(VERSION) docker compose up --build
