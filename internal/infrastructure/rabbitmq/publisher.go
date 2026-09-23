@@ -1,5 +1,4 @@
-// Package rabbitmq publishes the platform events the Node service emitted, over
-// AMQPS with a client certificate.
+// Package rabbitmq talks to the platform broker over AMQPS with a client certificate.
 package rabbitmq
 
 import (
@@ -27,7 +26,6 @@ const (
 	routingKey = "stores.delivery-report.update"
 )
 
-// Config is the broker address and the TLS material.
 type Config struct {
 	Host       string
 	Port       int
@@ -111,7 +109,13 @@ func tlsConfig(certPath, certPass, caPath, serverName string) (*tls.Config, erro
 func (p *Publisher) DeliveryReportUpdated(ctx context.Context, storeID string) error {
 	ctx, cancel := context.WithTimeout(ctx, p.cfg.Timeout)
 	defer cancel()
-	return p.publish(ctx, routingKey, deliveryReportMessage(storeID, time.Now()))
+	return p.publish(ctx, exchange, routingKey, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		// ponytail: Node sent Date.now() (ms) in this seconds field; kept so consumers see no change.
+		Timestamp: time.Unix(time.Now().UnixMilli(), 0),
+		Body:      deliveryReportMessage(storeID, time.Now()),
+	})
 }
 
 func deliveryReportMessage(storeID string, now time.Time) []byte {
@@ -124,14 +128,14 @@ func deliveryReportMessage(storeID string, now time.Time) []byte {
 }
 
 // A connection the broker dropped since the last message fails at once: retried on a fresh one, once.
-func (p *Publisher) publish(ctx context.Context, key string, body []byte) error {
+func (p *Publisher) publish(ctx context.Context, exchange, key string, msg amqp.Publishing) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	ch, err := p.channel()
 	if err != nil {
 		return err
 	}
-	if err = confirmPublish(ctx, ch, key, body); err == nil {
+	if err = confirmPublish(ctx, ch, exchange, key, msg); err == nil {
 		return nil
 	}
 	p.reset()
@@ -141,7 +145,7 @@ func (p *Publisher) publish(ctx context.Context, key string, body []byte) error 
 	if ch, err = p.channel(); err != nil {
 		return err
 	}
-	if err = confirmPublish(ctx, ch, key, body); err != nil {
+	if err = confirmPublish(ctx, ch, exchange, key, msg); err != nil {
 		p.reset()
 	}
 	return err
@@ -180,14 +184,8 @@ func (p *Publisher) channel() (*amqp.Channel, error) {
 	return ch, nil
 }
 
-func confirmPublish(ctx context.Context, ch *amqp.Channel, key string, body []byte) error {
-	dc, err := ch.PublishWithDeferredConfirmWithContext(ctx, exchange, key, false, false, amqp.Publishing{
-		ContentType:  "application/json",
-		DeliveryMode: amqp.Persistent,
-		// ponytail: Node sent Date.now() (ms) in this seconds field; kept so consumers see no change.
-		Timestamp: time.Unix(time.Now().UnixMilli(), 0),
-		Body:      body,
-	})
+func confirmPublish(ctx context.Context, ch *amqp.Channel, exchange, key string, msg amqp.Publishing) error {
+	dc, err := ch.PublishWithDeferredConfirmWithContext(ctx, exchange, key, false, false, msg)
 	if err != nil {
 		return err
 	}
@@ -208,7 +206,6 @@ func (p *Publisher) reset() {
 	p.conn, p.ch = nil, nil
 }
 
-// Close ends the connection at shutdown.
 func (p *Publisher) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package blogic.report.mail.v1;
+
+option csharp_namespace     = "TaskScheduling.Application.Common.Scheduling.ReportMail.V1";
+option java_package         = "vn.blogic.report.mail.v1";
+option java_multiple_files  = true;
+option go_package           = "blogic/gen/report/mail/v1;mailv1";
+
+enum ReportKind {
+  REPORT_KIND_UNSPECIFIED              = 0;
+  REPORT_KIND_SALES_SUMMARY            = 1;
+  REPORT_KIND_SALES_BY_DAY_PART        = 2;
+  REPORT_KIND_LOW_INVENTORY            = 3;
+  REPORT_KIND_DELIVERY_FEE             = 4;
+  REPORT_KIND_SALES_BY_MODIFIER        = 5;
+  REPORT_KIND_SALES_BY_CATEGORY        = 6;
+  REPORT_KIND_ITEM_SALES_BY_EMPLOYEE   = 7;
+}
+
+// The file types a report can be delivered as. XLSX applies to every kind but
+// DELIVERY_FEE, which is a PDF statement.
+enum DocumentFormat {
+  DOCUMENT_FORMAT_UNSPECIFIED = 0;
+  DOCUMENT_FORMAT_XLSX        = 1;
+  DOCUMENT_FORMAT_PDF         = 2;
+}
+
+// Dates are local wall-clock strings (yyyy-MM-ddTHH:mm:ss) without a zone.
+message ReportMeta {
+  string store_id    = 1;
+  string store_name  = 2;
+  string pos_version = 3;
+  string configurations = 6;
+
+  string store_state   = 7;
+  string store_city    = 8;
+  string store_address = 9;
+  string store_zip     = 10;
+  string store_mid     = 11;
+  bool   is_manual     = 12;
+
+  string from_date = 21;
+  string to_date   = 22;
+
+  reserved 4, 5;
+  reserved 13 to 20;
+}
+
+message ReportAttachment {
+  ReportKind report_kind = 1;
+  // File name stem of the attachment, e.g. "sales-summary".
+  string     report_slug = 2;
+  // Report window; when empty ReportMeta.from_date / to_date apply.
+  string     from_date   = 3;
+  string     to_date     = 4;
+  // UTF-8 JSON, the same shape as the `data` body of POST /api/send-email/<kind>.
+  bytes      data        = 5;
+  // UTF-8 JSON, the `summary` body of the delivery fee report; empty otherwise.
+  bytes      summary     = 6;
+}
+
+message SendReportMailRequest {
+  string     message_id  = 1;
+  ReportMeta meta        = 4;
+  repeated string emails = 5;
+
+  string task_id     = 8;
+  string dispatch_id = 9;
+  string ref_store   = 10;
+  uint32 task_version = 11;
+  string traceparent = 13;
+  string issued_at = 31;
+
+  repeated ReportAttachment reports          = 32;
+  string                    subject          = 33;
+  string                    body             = 34;
+  // Formats to deliver; empty means every format the report kind supports.
+  repeated DocumentFormat   document_formats = 35;
+  string                    schedule_name    = 36;
+
+  reserved 2, 3;
+  reserved 6, 7;
+  reserved 12;
+  reserved 14 to 30;
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_SENT        = 1;
+  DELIVERY_STATUS_FAILED      = 2;
+  DELIVERY_STATUS_REJECTED    = 3;
+  DELIVERY_STATUS_ACCEPTED    = 4;
+}
+
+message SendReportMailResult {
+  string message_id = 1;
+  DeliveryStatus status = 2;
+  repeated string delivered_to = 4;
+  string error_code = 5;
+  string error_message = 6;
+  string occurred_at = 21;
+
+  reserved 3;
+  reserved 7 to 20;
+}
